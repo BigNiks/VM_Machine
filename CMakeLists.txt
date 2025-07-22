@@ -8,4 +8,12 @@ add_executable(untitled main.c
         debug.h
         dataStructure.h
         pte.h
-        pte.c)
+        pte.c
+        pfn.h
+        dataStructure.c
+        list.c
+        list.h
+        pageTrim.c
+        pageTrim.h
+        writer.c
+        writer.h)

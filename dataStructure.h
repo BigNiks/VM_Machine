@@ -1,6 +1,9 @@
 //
 // Created by niko.madriz on 7/10/2025.
 //
+#include "macros.h"
+#include "pte.h"
+#include "pfn.h"
 
 #ifndef DATASTRUCTURE_H
 #define DATASTRUCTURE_H
@@ -39,4 +42,16 @@
 
 #define MAX_DISK_INDEX (DISK_SIZE / PAGE_SIZE)
 
+PULONG_PTR vaStart;
+PPTE pageTable;
+PPTE currentPTE;
+PVOID transferVA;
+ULONG_PTR virtual_address_size;
+
+ULONG64 diskPageIndex;
+boolean* diskPages;
+PVOID disk;
+
+void initializeDisk();
+void initialize_lists (PULONG_PTR physical_page_number, PPFN pfnarray, ULONG_PTR physical_page_count);
 #endif //DATASTRUCTURE_H

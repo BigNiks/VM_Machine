@@ -5,6 +5,9 @@
 #include "debug.h"
 #include "pte.h"
 #include "dataStructure.h"
+#include "pfn.h"
+#include "list.h"
+#include "writer.h"
 
 //
 // This define enables code that lets us create multiple virtual address
@@ -133,136 +136,19 @@ CreateSharedMemorySection (
 
 #endif
 
-
-typedef struct {
-
-    LIST_ENTRY entry;
-    PTE *PTE;
+VOID set_pte_valid(PPFN freePage, PPTE pte, PULONG_PTR faultedVA) {
+    PLIST_ENTRY head;
     ULONG64 frameNumber;
-
-} PFN, *PPFN;
-
-LIST_ENTRY headFreeList;
-LIST_ENTRY headActiveList;
-PULONG_PTR vaStart;
-PPTE pageTable;
-PPTE currentPTE;
-PVOID transferVA;
-ULONG_PTR virtual_address_size;
-
-ULONG64 diskPageIndex;
-boolean* diskPages;
-PVOID disk;
-
-VOID initializeDisk() {
-    disk = malloc(DISK_SIZE);
-    //checks to make sure previous step was successful
-    if (disk == NULL) {
-        printf("initializeDisk : disk space malloc unsuccessful");
-    }
-    //
-    memset(disk, 0, DISK_SIZE);
-    diskPages = malloc(DISK_SIZE / PAGE_SIZE);
-    if (diskPages == NULL) {
-        printf("initializeDisk : disk page malloc unsuccessful");
-    }
-    //If 1, then page is already in use and is unaccessible
-    memset(diskPages, 0, DISK_SIZE / PAGE_SIZE);
-    //We skip the first index 0 so when we page fault, we can check the diskIndex in PTE
-    diskPageIndex = 1;
-}
-
-
-PPFN listRemove(PLIST_ENTRY head) {
-    //Check if list is empty
-    if (head->Flink == head) {
-        printf("List_remove : empty list");
-        return NULL;
-    }
-    //Cast the first entry in the list as a PPFN, then get the next PFN after the one we're removing
-    PPFN freePage = (PPFN) head->Flink;
-    PPFN nextpage = (PPFN) freePage->entry.Flink;
-    //Make it so that head's flink skips the removed entry
-    head->Flink = &nextpage->entry;
-    //Update nextpage blink to point back to head
-    nextpage->entry.Blink = head;
-
-    return freePage;
-}
-
-void add_entry (PLIST_ENTRY head, PFN* newpfn) {
-    PLIST_ENTRY Flink;
-    //Get the first element after head
-    Flink = head->Flink;
-    //Link the new entry's flink to current first element
-    newpfn->entry.Flink = Flink;
-    //Do the same thing but now with the blink pointing to the head
-    newpfn->entry.Blink = head;
-    //Update the backward pointer to the new entry
-    Flink->Blink = &newpfn->entry;
-    //Make head's flink point to the new entry
-    head->Flink = &newpfn->entry;
-}
-
-PPTE va_to_pte(PULONG_PTR address) {
-    ULONG64 index = ((ULONG64) address - (ULONG64) vaStart) / PAGE_SIZE;
-    PPTE pte = pageTable + index;
-    return pte;
-}
-
-PULONG_PTR pte_to_va(PPTE pte) {
-
-    ULONG64 index = (pte - pageTable);
-    return (PULONG_PTR)((index * PAGE_SIZE) + (ULONG_PTR) vaStart);
-
-}
-
-
-void initialize_lists (PULONG_PTR physical_page_number, PPFN pfnarray, ULONG_PTR physical_page_count) {
-    InitializeListHead(&headFreeList);
-    InitializeListHead(&headActiveList);
-    PPFN pfn;
-    PLIST_ENTRY entry = &headFreeList;
-    for (int i = 0; i < physical_page_count; i++) {
-        pfn = &pfnarray[i];
-        pfn->frameNumber = physical_page_number[i];
-        add_entry(entry, pfn);
-    }
-}
-
-VOID diskWrite(PPFN pfn) {
-    //map physical page to the transfer VA
-    if (MapUserPhysicalPages(transferVA, 1, &pfn->frameNumber) == FALSE) {
-        printf("diskWrite: failed to map\n");
+    frameNumber = freePage->frameNumber;
+    freePage->PTE = pte;
+    pte->validFormat.frameNumber = frameNumber;
+    pte->validFormat.valid = 1;
+    freePage->status = PFN_ACTIVE;
+    head = &headActiveList;
+    add_entry(head, freePage);
+    if (MapUserPhysicalPages (faultedVA, 1, &frameNumber) == FALSE) {
         DebugBreak();
-        return;
-    }
-    ULONG64 counter = 0;
-    #define DISK_SLOT_IN_USE 1
-    // Look for a disk_page that is available
-    while(diskPages[diskPageIndex] == DISK_SLOT_IN_USE && counter != 2) {
-        diskPageIndex++;
-        // Check if we are at the end of the array
-        if (diskPageIndex == DISK_SIZE / PAGE_SIZE){
-            // Wrap around the disk
-            diskPageIndex = 1;
-            counter++;
-        }
-    }
-    if (counter == 2) {
-        printf("diskWrite: no available disk pages\n");
-        DebugBreak();
-    }
-    PVOID diskAddress = (PVOID)((ULONG64) disk + diskPageIndex * PAGE_SIZE);
-    // Copy contents from transfer va to diskAddress
-    memcpy(diskAddress, transferVA, PAGE_SIZE);
-    // Make disk page unavailable
-    diskPages[diskPageIndex] = DISK_SLOT_IN_USE;
-    // Unmap transfer VA
-    if (MapUserPhysicalPages(transferVA, 1, NULL) == FALSE) {
-        printf("diskWrite: failed to unmap\n");
-        DebugBreak();
-        return;
+        printf ("full_virtual_memory_test : could not map VA %p to page %llX\n", faultedVA, frameNumber);
     }
 }
 
@@ -290,31 +176,6 @@ VOID diskRead (ULONG64 diskIndex, PPFN pfn) {
         DebugBreak();
     }
     diskPages[diskIndex] = 0;
-}
-
-
-VOID pageTrim() {
-    //Choose a victim to remove from active list
-    PPFN victim = listRemove(&headActiveList);
-    NULL_CHECK(victim, "pageTrim : Vicitm is null");
-    //Get the PTE associated with the victim
-    PPTE pte = victim->PTE;
-    NULL_CHECK(pte, "pageTrim : pte is null");
-    //Get the virtual address for the PTE
-    ULONG64 va = (ULONG64) pte_to_va(pte);
-    //Unmap the virtual address from the victim's physical frame
-    if (MapUserPhysicalPages(va, 1, NULL) == FALSE) {
-        DebugBreak();
-        printf("trim_page : VA unmap unsuccessful");
-    }
-    //Save contents of victim to disk
-    diskWrite(victim);
-    //Update the PTE to be invalid
-    victim->PTE->invalidFormat.mustBeZero = 0;
-    //Stamp the PTE with the disk index related to the page
-    victim->PTE->invalidFormat.diskIndex = diskPageIndex;
-    //Add victim back to free list
-    add_entry(&headFreeList, victim);
 }
 
 
@@ -557,7 +418,7 @@ full_virtual_memory_test (
             if (IsListEmpty(&headFreeList)) {
                 pageTrim();
             }
-            freePage = listRemove(head);
+            freePage = getFreePage();
             NULL_CHECK(freePage, "Page fault handler : free page is null");
             ULONG64 frameNumber = freePage->frameNumber;
             //checks if the pte has a saved disk index connected to it
@@ -565,15 +426,9 @@ full_virtual_memory_test (
             if (pte->invalidFormat.diskIndex != 0) {
                 diskRead(pte->invalidFormat.diskIndex, freePage);
             }
-            //Here is where we map the VA to the physical page
-            if (MapUserPhysicalPages(arbitrary_va, 1, &frameNumber) == FALSE) {
-                DebugBreak();
-                printf ("full_virtual_memory_test : could not map VA to page");
-                return;
-            }
             freePage->PTE = pte;
             //This function sets the pte to be valid
-            set_pte_valid(frameNumber, pte);
+            set_pte_valid(freePage, pte, arbitrary_va);
             //Add the page into the active list
             head = &headActiveList;
             add_entry(head, freePage);

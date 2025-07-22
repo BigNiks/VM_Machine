@@ -2,6 +2,11 @@
 // Created by niko.madriz on 7/10/2025.
 //
 #include "Windows.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <windows.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 #ifndef PTE_H
 #define PTE_H
@@ -28,6 +33,7 @@ typedef struct {
 } PTE, *PPTE;
 
 
-VOID set_pte_valid(ULONG64 frameNumber, PPTE pte);
+PULONG_PTR pte_to_va(PPTE pte);
+PPTE va_to_pte(PULONG_PTR address);
 
 #endif //PTE_H
