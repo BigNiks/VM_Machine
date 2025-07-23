@@ -5,8 +5,10 @@
 #include "debug.h"
 #include "pte.h"
 #include "dataStructure.h"
+#include "handler.h"
 #include "pfn.h"
 #include "list.h"
+#include "util.h"
 #include "writer.h"
 
 //
@@ -135,48 +137,6 @@ CreateSharedMemorySection (
 }
 
 #endif
-
-VOID set_pte_valid(PPFN freePage, PPTE pte, PULONG_PTR faultedVA) {
-    PLIST_ENTRY head;
-    ULONG64 frameNumber;
-    frameNumber = freePage->frameNumber;
-    freePage->PTE = pte;
-    pte->validFormat.frameNumber = frameNumber;
-    pte->validFormat.valid = 1;
-    freePage->status = PFN_ACTIVE;
-    head = &headActiveList;
-    add_entry(head, freePage);
-    if (MapUserPhysicalPages (faultedVA, 1, &frameNumber) == FALSE) {
-        DebugBreak();
-        printf ("full_virtual_memory_test : could not map VA %p to page %llX\n", faultedVA, frameNumber);
-    }
-}
-
-VOID diskRead (ULONG64 diskIndex, PPFN pfn) {
-    PVOID diskAddress = (PVOID)((ULONG64) disk + (diskIndex * PAGE_SIZE));
-    if (MapUserPhysicalPages(transferVA, 1, &pfn->frameNumber) == FALSE) {
-        printf("diskRead: failed to map\n");
-        DebugBreak();
-        return;
-    }
-
-    memcpy(transferVA, diskAddress, PAGE_SIZE);
-
-    if (MapUserPhysicalPages(transferVA, 1, NULL) == FALSE) {
-        printf("diskRead: failed to unmap\n");
-        DebugBreak();
-        return;
-    }
-    //check that disk index is in use
-    if (diskPages[diskIndex] == 0) {
-        DebugBreak();
-    }
-    //check that disk index is in bounds
-    if (diskIndex > MAX_DISK_INDEX) {
-        DebugBreak();
-    }
-    diskPages[diskIndex] = 0;
-}
 
 
 VOID
@@ -410,29 +370,8 @@ full_virtual_memory_test (
             // IT NEEDS TO BE REPLACED WITH A TRUE MEMORY MANAGEMENT
             // STATE MACHINE !
             //
-
-            PPFN freePage;
-            PPTE pte = va_to_pte(arbitrary_va);
-            PLIST_ENTRY head = &headFreeList;
-            //Checks if free list is empty, if it is then we page trim
-            if (IsListEmpty(&headFreeList)) {
-                pageTrim();
-            }
-            freePage = getFreePage();
-            NULL_CHECK(freePage, "Page fault handler : free page is null");
-            ULONG64 frameNumber = freePage->frameNumber;
-            //checks if the pte has a saved disk index connected to it
-            //If so then we read the contents from disk
-            if (pte->invalidFormat.diskIndex != 0) {
-                diskRead(pte->invalidFormat.diskIndex, freePage);
-            }
-            freePage->PTE = pte;
-            //This function sets the pte to be valid
-            set_pte_valid(freePage, pte, arbitrary_va);
             //Add the page into the active list
-            head = &headActiveList;
-            add_entry(head, freePage);
-
+            handleFault(arbitrary_va);
             //
             // No exception handler needed now since we have connected
             // the virtual address above to one of our physical pages
@@ -445,7 +384,7 @@ full_virtual_memory_test (
             // Unmap the virtual address translation we installed above
             // now that we're done writing our value into it.
             //
-
+            checkVa(arbitrary_va);
         }
     }
 

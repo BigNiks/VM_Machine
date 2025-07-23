@@ -16,6 +16,6 @@ PPTE va_to_pte(PULONG_PTR address) {
 PULONG_PTR pte_to_va(PPTE pte) {
 
     ULONG64 index = (pte - pageTable);
-    return (PULONG_PTR)((index * PAGE_SIZE) + (ULONG_PTR) vaStart);
+    return (PULONG_PTR)((index * PAGE_SIZE) + (ULONG64) vaStart);
 
 }

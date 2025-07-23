@@ -35,6 +35,5 @@ void diskWrite(PPFN pfn) {
     if (MapUserPhysicalPages(transferVA, 1, NULL) == FALSE) {
         printf("diskWrite: failed to unmap\n");
         DebugBreak();
-        return;
     }
 }

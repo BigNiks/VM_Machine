@@ -38,6 +38,7 @@ void initialize_lists (PULONG_PTR physical_page_number, PPFN pfnarray, ULONG_PTR
     for (int i = 0; i < physical_page_count; i++) {
         pfn = &pfnarray[i];
         pfn->frameNumber = physical_page_number[i];
+        pfn->status = PFN_FREE;
         add_entry(entry, pfn);
     }
 }

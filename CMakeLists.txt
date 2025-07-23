@@ -16,4 +16,11 @@ add_executable(untitled main.c
         pageTrim.c
         pageTrim.h
         writer.c
-        writer.h)
+        writer.h
+        util.c
+        util.h
+        handler.c
+        handler.h
+        reader.c
+        reader.h
+)

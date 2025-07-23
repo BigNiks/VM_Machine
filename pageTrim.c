@@ -34,6 +34,4 @@ VOID pageTrim() {
     victim->PTE->invalidFormat.mustBeZero = 0;
     //Stamp the PTE with the disk index related to the page
     victim->PTE->invalidFormat.diskIndex = diskPageIndex;
-    //Add victim back to free list
-    add_entry(&headFreeList, victim);
 }

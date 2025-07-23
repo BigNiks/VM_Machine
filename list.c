@@ -43,7 +43,7 @@ PPFN getFreePage() {
         pageTrim();
         head = &headStandbyList;
     }
-    // Get a free page from the free list
+    // Get a free page from the free list or standby list
     freePage = listRemove(head);
     if (freePage == NULL) {
         printf("full_virtual_memory_test: freePage is null");
